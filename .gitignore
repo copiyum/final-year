@@ -1,0 +1,100 @@
+# ===========================================
+# ZKP Ledger System - Git Ignore
+# ===========================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Environment files (contain secrets)
+.env
+.env.local
+.env.*.local
+.env.testnet
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+coverage/
+.nyc_output/
+
+# Foundry / Smart Contracts
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+!contracts/broadcast/.gitkeep
+
+# Circuit artifacts (large files)
+*.ptau
+*.zkey
+*.wtns
+*.r1cs
+*.sym
+# Keep the final compiled artifacts needed for proving
+!apps/prover-worker/circuits/*.wasm
+!apps/prover-worker/circuits/*_final.zkey
+!apps/prover-worker/circuits/verification_key.json
+
+# Circom build
+circom/target/
+
+# MinIO data (local development)
+minio-data/
+
+# Docker volumes
+postgres-data/
+redis-data/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Lock files (optional - uncomment if you want to ignore)
+# package-lock.json
+# bun.lock
+
+# Bun
+.bun/
+
+# TypeScript cache
+*.tsbuildinfo
+tsconfig.tsbuildinfo
+
+# Misc
+*.bak
+*.backup
+.kiro/
+kiro/

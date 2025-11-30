@@ -1,0 +1,11 @@
+[project]
+name = "python-utils"
+version = "0.1.0"
+description = "Python utilities for ZKP Ledger System"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

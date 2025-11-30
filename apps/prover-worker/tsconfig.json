@@ -1,0 +1,39 @@
+{
+  "compilerOptions": {
+    "module": "nodenext",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false,
+    "paths": {
+      "@zkp-ledger/queue": [
+        "../../packages/queue/src/index.ts"
+      ],
+      "@zkp-ledger/storage": [
+        "../../packages/storage/src/index.ts"
+      ],
+      "@zkp-ledger/common": [
+        "../../packages/common/src/index.ts"
+      ],
+      "@zkp-ledger/circuits": [
+        "../../packages/circuits/src/index.ts"
+      ]
+    },
+    "resolvePackageJsonExports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "declaration": true,
+    "removeComments": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
