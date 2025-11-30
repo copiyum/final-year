@@ -9,81 +9,91 @@ Authentication and user management service for the startup-investor platform.
 - ✅ Bcrypt password hashing (cost factor 12)
 - ✅ Protected routes with JWT guard
 - ✅ Database integration via existing DatabaseModule
+- ✅ Refresh token support (7-day expiry)
+- ✅ Email verification flow
+- ✅ Password reset flow
+- ✅ ZK credential integration
+- ✅ Ledger event hashing
 
 ## API Endpoints
 
 ### POST /auth/register
-Register a new user.
+Register a new user. Sends verification email.
 
 **Request:**
 ```json
 {
   "email": "user@example.com",
   "password": "securepassword",
-  "role": "founder" // or "investor"
+  "role": "founder"
 }
 ```
 
 **Response:**
 ```json
 {
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "role": "founder",
-    "createdAt": "2025-11-28T..."
-  },
-  "accessToken": "jwt.token.here"
+  "user": { "id": "uuid", "email": "user@example.com", "role": "founder", "emailVerified": false },
+  "accessToken": "jwt.token.here",
+  "refreshToken": "refresh.token.here"
 }
 ```
 
 ### POST /auth/login
 Login existing user.
 
+### POST /auth/refresh
+Refresh access token using refresh token.
+
 **Request:**
 ```json
-{
-  "email": "user@example.com",
-  "password": "securepassword"
-}
+{ "refreshToken": "refresh.token.here" }
 ```
 
-**Response:**
+### POST /auth/logout
+Revoke refresh token.
+
+### GET /auth/verify-email?token=xxx
+Verify email address.
+
+### POST /auth/resend-verification
+Resend verification email.
+
+**Request:**
 ```json
-{
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "role": "founder"
-  },
-  "accessToken": "jwt.token.here"
-}
+{ "email": "user@example.com" }
+```
+
+
+### POST /auth/forgot-password
+Request password reset email.
+
+**Request:**
+```json
+{ "email": "user@example.com" }
+```
+
+### POST /auth/reset-password
+Reset password with token.
+
+**Request:**
+```json
+{ "token": "reset-token", "password": "newpassword" }
 ```
 
 ### GET /auth/me
 Get current user profile (requires JWT).
 
-**Headers:**
-```
-Authorization: Bearer <jwt.token.here>
-```
-
-**Response:**
-```json
-{
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "role": "founder"
-  }
-}
-```
-
 ## Environment Variables
 
-- `JWT_SECRET` - Secret key for JWT signing (default: development-secret-change-in-production)
+- `JWT_SECRET` - Secret key for JWT signing
 - `DATABASE_URL` - PostgreSQL connection string
 - `PORT` - Service port (default: 3007)
+- `APP_URL` - Application URL for email links
+- `LEDGER_SERVICE_URL` - Ledger service URL
+- `CREDENTIAL_ISSUER_URL` - Credential issuer URL
+- `RESEND_API_KEY` - Resend API key (free: 100 emails/day, get at resend.com)
+- `EMAIL_FROM` - From email (default: onboarding@resend.dev)
+- `EMAIL_FROM_NAME` - From name (default: ZKP Platform)
 
 ## Database Schema
 
@@ -92,16 +102,26 @@ Authorization: Bearer <jwt.token.here>
 - `email` - Unique email address
 - `password_hash` - Bcrypt hashed password
 - `role` - User role (founder/investor)
-- `created_at` - Timestamp
-- `updated_at` - Timestamp
+- `email_verified` - Boolean
+- `verification_token` - Email verification token
+- `verification_expires` - Token expiry
+- `reset_token` - Password reset token
+- `reset_expires` - Token expiry
+- `created_at`, `updated_at` - Timestamps
+
+### refresh_tokens
+- `id` - UUID primary key
+- `user_id` - Foreign key to users
+- `token` - Refresh token
+- `expires_at` - Token expiry
+- `revoked_at` - Revocation timestamp
 
 ### user_credentials
 - `id` - UUID primary key
 - `user_id` - Foreign key to users
 - `credential_hash` - ZK credential hash
 - `credential_type` - Type of credential
-- `issued_at` - Timestamp
-- `revoked_at` - Timestamp (nullable)
+- `issued_at`, `revoked_at` - Timestamps
 
 ## Running
 
@@ -112,9 +132,4 @@ PORT=3007 bun run src/main.ts
 
 ## TODO
 
-- [ ] Integrate with Credential Issuer for ZK credentials
-- [ ] Hash user actions to Ledger Service
-- [ ] Add refresh token support
-- [ ] Add email verification
-- [ ] Add password reset flow
 - [ ] Write unit tests

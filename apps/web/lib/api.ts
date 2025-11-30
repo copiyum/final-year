@@ -234,6 +234,12 @@ export const startupsApi = {
         const user = JSON.parse(userData);
         await startupApi.post(`/startups/${startupId}/access/revoke`, { founderId: user.id, investorId });
     },
+
+    // Get document download URL (presigned)
+    getDocumentDownloadUrl: async (startupId: string, documentId: string): Promise<{ url: string }> => {
+        const response = await startupApi.get(`/startups/${startupId}/documents/${documentId}/download`);
+        return response.data;
+    },
 };
 
 // Investor service API - now routes through API Gateway

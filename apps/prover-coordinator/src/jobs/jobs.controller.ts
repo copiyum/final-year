@@ -25,4 +25,44 @@ export class JobsController {
     requeuePending() {
         return this.jobsService.requeuePendingJobs();
     }
+
+    /**
+     * Get jobs from the dead letter queue
+     */
+    @Get('dlq/list')
+    getDeadLetterJobs(@Query('limit') limit?: number) {
+        return this.jobsService.getDeadLetterJobs(limit || 10);
+    }
+
+    /**
+     * Reprocess a specific job from the dead letter queue
+     */
+    @Post('dlq/:jobId/reprocess')
+    reprocessDeadLetterJob(@Param('jobId') jobId: string) {
+        return this.jobsService.reprocessDeadLetterJob(jobId);
+    }
+
+    /**
+     * Reprocess all jobs in the dead letter queue
+     */
+    @Post('dlq/reprocess-all')
+    reprocessAllDeadLetterJobs() {
+        return this.jobsService.reprocessAllDeadLetterJobs();
+    }
+
+    /**
+     * Get failed jobs from the database
+     */
+    @Get('failed')
+    getFailedJobs(@Query('limit') limit?: number) {
+        return this.jobsService.getFailedJobs(limit || 10);
+    }
+
+    /**
+     * Retry a failed job
+     */
+    @Post(':id/retry')
+    retryJob(@Param('id') id: string) {
+        return this.jobsService.retryFailedJob(id);
+    }
 }

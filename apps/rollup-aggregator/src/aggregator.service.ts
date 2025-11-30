@@ -6,18 +6,121 @@ import { firstValueFrom } from 'rxjs';
 import { MerkleTreeBuilder, canonicalHash } from '@zkp-ledger/common';
 import { randomUUID } from 'crypto';
 import { AnchorService } from './anchor.service';
+import { StorageService } from '@zkp-ledger/storage';
 
 @Injectable()
 export class AggregatorService {
     private readonly logger = new Logger(AggregatorService.name);
     private isProcessing = false;
     private isAnchoring = false;
+    private storage: StorageService;
+    
+    // Retry configuration
+    private readonly maxRetries = 3;
+    private readonly baseRetryDelayMs = 1000;
+    private proofFetchFailures: Map<string, number> = new Map();
 
     constructor(
         @Inject('DATABASE_POOL') private pool: Pool,
         private readonly anchorService: AnchorService,
         private readonly httpService: HttpService
-    ) { }
+    ) {
+        this.storage = new StorageService();
+    }
+
+    /**
+     * Fetch proof from storage with exponential backoff retry
+     */
+    private async fetchProofWithRetry(proofUrl: string, batchId: string): Promise<any | null> {
+        const urlParts = proofUrl.replace(/^(minio|s3):\/\/[^/]+\//, '');
+        
+        for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
+            try {
+                const proofData = await this.storage.downloadProof(urlParts);
+                
+                if (proofData && proofData.proof) {
+                    // Reset failure count on success
+                    this.proofFetchFailures.delete(batchId);
+                    this.logger.log(`Successfully fetched proof from storage (attempt ${attempt}): ${proofUrl}`);
+                    return proofData.proof;
+                }
+                
+                throw new Error('Proof data is empty or malformed');
+            } catch (error: any) {
+                const delay = this.baseRetryDelayMs * Math.pow(2, attempt - 1);
+                this.logger.warn(`Proof fetch attempt ${attempt}/${this.maxRetries} failed: ${error.message}`);
+                
+                if (attempt < this.maxRetries) {
+                    this.logger.log(`Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                } else {
+                    // Track failure for monitoring
+                    const failures = (this.proofFetchFailures.get(batchId) || 0) + 1;
+                    this.proofFetchFailures.set(batchId, failures);
+                    
+                    this.logger.error(`All ${this.maxRetries} proof fetch attempts failed for batch ${batchId}`);
+                    this.emitProofFetchAlert(batchId, failures, error.message);
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /**
+     * Emit alert for proof fetch failures - sends to configured monitoring endpoints
+     */
+    private async emitProofFetchAlert(batchId: string, failureCount: number, lastError: string): Promise<void> {
+        const alert = {
+            type: 'PROOF_FETCH_FAILURE',
+            batchId,
+            failureCount,
+            lastError,
+            timestamp: new Date().toISOString(),
+            severity: failureCount >= 3 ? 'HIGH' : 'MEDIUM'
+        };
+        
+        this.logger.error(`🚨 ALERT: ${JSON.stringify(alert)}`);
+        
+        // Send to configured monitoring endpoints
+        const slackWebhook = process.env.SLACK_ALERT_WEBHOOK;
+        const pagerdutyKey = process.env.PAGERDUTY_ROUTING_KEY;
+        
+        if (slackWebhook) {
+            try {
+                await firstValueFrom(
+                    this.httpService.post(slackWebhook, {
+                        text: `🚨 *Proof Fetch Failure*\nBatch: ${batchId}\nFailures: ${failureCount}\nError: ${lastError}`,
+                        attachments: [{ color: alert.severity === 'HIGH' ? 'danger' : 'warning', fields: [
+                            { title: 'Severity', value: alert.severity, short: true },
+                            { title: 'Timestamp', value: alert.timestamp, short: true }
+                        ]}]
+                    })
+                );
+            } catch (err: any) {
+                this.logger.warn(`Failed to send Slack alert: ${err.message}`);
+            }
+        }
+        
+        if (pagerdutyKey && alert.severity === 'HIGH') {
+            try {
+                await firstValueFrom(
+                    this.httpService.post('https://events.pagerduty.com/v2/enqueue', {
+                        routing_key: pagerdutyKey,
+                        event_action: 'trigger',
+                        payload: {
+                            summary: `Proof fetch failure for batch ${batchId}`,
+                            severity: 'error',
+                            source: 'rollup-aggregator',
+                            custom_details: alert
+                        }
+                    })
+                );
+            } catch (err: any) {
+                this.logger.warn(`Failed to send PagerDuty alert: ${err.message}`);
+            }
+        }
+    }
 
     @Cron(CronExpression.EVERY_10_SECONDS)
     async processPendingEvents() {
@@ -41,13 +144,24 @@ export class AggregatorService {
 
             this.logger.log(`Found ${events.length} pending events. Creating batch...`);
 
-            // 2. Compute Merkle roots
-            // For simplicity, we assume prestate is empty or previous batch's poststate
-            // In a real system, we'd fetch the latest batch's poststate
+            // 2. Compute Merkle roots with proper state validation
+            // Fetch the latest ANCHORED batch to ensure we're building on verified state
             const latestBatch = await this.pool.query(
-                `SELECT poststate_root FROM batches ORDER BY created_at DESC LIMIT 1`
+                `SELECT id, poststate_root, status FROM batches 
+                 WHERE status = 'anchored' 
+                 ORDER BY anchored_at DESC NULLS LAST, created_at DESC 
+                 LIMIT 1`
             );
-            const prestateRoot = latestBatch.rows[0]?.poststate_root || '0x0'; // Genesis root
+            
+            let prestateRoot: string;
+            if (latestBatch.rows.length === 0) {
+                // Genesis case - no previous batches
+                prestateRoot = '0x0';
+                this.logger.log('Building on genesis state (no previous anchored batches)');
+            } else {
+                prestateRoot = latestBatch.rows[0].poststate_root;
+                this.logger.log(`Building on batch ${latestBatch.rows[0].id} with poststate ${prestateRoot}`);
+            }
 
             // Build tree from event hashes
             // We need to hash the events first. Assuming payload is what we hash?
@@ -156,16 +270,24 @@ export class AggregatorService {
             // Try to anchor on blockchain if enabled
             if (this.anchorService.isEnabled()) {
                 try {
-                    // Fetch proof from storage if available
+                    // Fetch proof from storage with retry logic
                     const proofUrl = batch.proof_s3_url;
-                    let proof = {
-                        pi_a: ["0", "0"],
-                        pi_b: [["0", "0"], ["0", "0"]],
-                        pi_c: ["0", "0"]
-                    };
+                    let proof = null;
 
-                    // For now, use mock proof - in production, fetch from MinIO
-                    // TODO: Implement proof fetching from MinIO
+                    if (proofUrl) {
+                        proof = await this.fetchProofWithRetry(proofUrl, batch.id);
+                    }
+
+                    // If proof fetch failed after retries, skip anchoring for now
+                    if (!proof) {
+                        this.logger.warn(`Skipping on-chain anchoring for batch ${batch.id} - proof not available`);
+                        // Mark batch for retry later
+                        await this.pool.query(
+                            `UPDATE batches SET status = 'proof_fetch_failed', last_fetch_attempt = NOW() WHERE id = $1`,
+                            [batch.id]
+                        );
+                        return;
+                    }
                     
                     const anchorResult = await this.anchorService.anchorBatchWithoutProof(
                         batch.id,

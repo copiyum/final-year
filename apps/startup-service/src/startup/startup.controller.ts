@@ -45,6 +45,14 @@ export class StartupController {
         return this.startupService.getDocuments(id);
     }
 
+    @Get(':id/documents/:documentId/download')
+    async getDocumentDownloadUrl(
+        @Param('id') startupId: string,
+        @Param('documentId') documentId: string,
+    ) {
+        return this.startupService.getDocumentDownloadUrl(startupId, documentId);
+    }
+
     @Post(':id/access/grant')
     async grantAccess(
         @Param('id') id: string,

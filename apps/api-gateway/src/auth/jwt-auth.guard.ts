@@ -33,7 +33,11 @@ export class JwtAuthGuard implements CanActivate {
         }
 
         try {
-            const secret = process.env.JWT_SECRET || 'super-secret-jwt-key';
+            const secret = process.env.JWT_SECRET;
+            if (!secret) {
+                console.error('[JwtAuthGuard] CRITICAL: JWT_SECRET environment variable is not set');
+                throw new UnauthorizedException('Server configuration error');
+            }
             const payload = jwt.verify(token, secret) as JwtPayload;
             console.log('[JwtAuthGuard] Token verified for user:', payload.email, 'role:', payload.role);
 

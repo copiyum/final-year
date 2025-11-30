@@ -122,9 +122,16 @@ contract BatchVerifier {
         emit BatchVerified(batchId, batchRoot, block.timestamp, msg.sender);
     }
     
+    // Production mode flag - when true, anchorBatchWithoutProof is disabled
+    bool public productionMode;
+    
+    // Custom error for production mode violations
+    error ProductionModeEnabled();
+    
     /**
-     * @notice Anchor a batch without ZKP verification (for testing/mock mode)
-     * @dev Only owner can use this function
+     * @notice Anchor a batch without ZKP verification (for testing/development only)
+     * @dev Only owner can use this function, and only when NOT in production mode
+     * @dev SECURITY: This function bypasses ZKP verification and should NEVER be enabled in production
      */
     function anchorBatchWithoutProof(
         bytes32 batchId,
@@ -133,6 +140,8 @@ contract BatchVerifier {
         bytes32 poststateRoot,
         string calldata metadataURI
     ) external onlyOwner {
+        // CRITICAL: Block this function in production mode
+        if (productionMode) revert ProductionModeEnabled();
         if (batches[batchId].verified) revert BatchAlreadyExists();
         
         batches[batchId] = Batch({
@@ -149,6 +158,14 @@ contract BatchVerifier {
         batchIds.push(batchId);
         
         emit BatchVerified(batchId, batchRoot, block.timestamp, msg.sender);
+    }
+    
+    /**
+     * @notice Enable production mode - permanently disables anchorBatchWithoutProof
+     * @dev This is a one-way operation and cannot be undone
+     */
+    function enableProductionMode() external onlyOwner {
+        productionMode = true;
     }
 
     /**

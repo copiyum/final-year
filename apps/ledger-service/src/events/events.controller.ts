@@ -25,4 +25,13 @@ export class EventsController {
     getInclusionProof(@Param('id') id: string) {
         return this.eventsService.getInclusionProof(id);
     }
+
+    /**
+     * Backfill leaf hashes for existing events
+     * This is a maintenance endpoint - run once after migration
+     */
+    @Post('maintenance/backfill-leaf-hashes')
+    backfillLeafHashes() {
+        return this.eventsService.backfillLeafHashes();
+    }
 }

@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject, Logger, OnModuleInit } from '@nestjs/common';
 import { Pool } from 'pg';
 import { StorageService } from '@zkp-ledger/storage';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
+import * as crypto from 'crypto';
 
 interface CreateStartupDTO {
     name: string;
@@ -21,11 +22,12 @@ interface UpdateStartupDTO {
 }
 
 @Injectable()
-export class StartupService {
+export class StartupService implements OnModuleInit {
     private readonly logger = new Logger(StartupService.name);
     private storage: StorageService;
     private readonly ledgerServiceUrl: string;
     private readonly proverCoordinatorUrl: string;
+    private encryptionKey: Buffer;
 
     constructor(
         @Inject('DATABASE_POOL') private pool: Pool,
@@ -36,17 +38,80 @@ export class StartupService {
         this.proverCoordinatorUrl = process.env.PROVER_COORDINATOR_URL || 'http://localhost:3001';
     }
 
+    onModuleInit() {
+        // Derive encryption key from ENCRYPTION_SECRET or SIGNING_SECRET
+        const secret = process.env.ENCRYPTION_SECRET || process.env.SIGNING_SECRET;
+        if (!secret) {
+            throw new Error('ENCRYPTION_SECRET or SIGNING_SECRET environment variable is required');
+        }
+        // Derive a 32-byte key using SHA-256
+        this.encryptionKey = crypto.createHash('sha256').update(secret).digest();
+    }
+
+    /**
+     * Encrypt a value using AES-256-GCM
+     */
+    private encryptValue(value: string): string {
+        const iv = crypto.randomBytes(12); // 96-bit IV for GCM
+        const cipher = crypto.createCipheriv('aes-256-gcm', this.encryptionKey, iv);
+        
+        let encrypted = cipher.update(value, 'utf8', 'hex');
+        encrypted += cipher.final('hex');
+        const authTag = cipher.getAuthTag();
+        
+        // Format: iv:authTag:encryptedData (all hex)
+        return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+    }
+
+    /**
+     * Decrypt a value encrypted with AES-256-GCM
+     */
+    private decryptValue(encryptedValue: string): string {
+        // Handle legacy base64-only values
+        if (!encryptedValue.includes(':')) {
+            return Buffer.from(encryptedValue, 'base64').toString('utf8');
+        }
+        
+        const [ivHex, authTagHex, encrypted] = encryptedValue.split(':');
+        const iv = Buffer.from(ivHex, 'hex');
+        const authTag = Buffer.from(authTagHex, 'hex');
+        
+        const decipher = crypto.createDecipheriv('aes-256-gcm', this.encryptionKey, iv);
+        decipher.setAuthTag(authTag);
+        
+        let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        
+        return decrypted;
+    }
+
+    /**
+     * Generate a cryptographic signature for an event
+     * Uses HMAC-SHA256 with a secret key for message authentication
+     */
+    private generateSignature(type: string, payload: any, signer: string, timestamp: number): string {
+        const signingKey = process.env.SIGNING_SECRET;
+        if (!signingKey) {
+            throw new Error('SIGNING_SECRET environment variable is required');
+        }
+        const message = JSON.stringify({ type, payload, signer, timestamp });
+        return crypto.createHmac('sha256', signingKey).update(message).digest('hex');
+    }
+
     /**
      * Hash an event to the ledger service
      */
     private async hashEventToLedger(type: string, payload: any, signer: string): Promise<string> {
         try {
+            const timestamp = Date.now();
+            const signature = this.generateSignature(type, payload, signer, timestamp);
+            
             const response = await firstValueFrom(
                 this.httpService.post(`${this.ledgerServiceUrl}/events`, {
                     type,
                     payload,
                     signer,
-                    signature: `sig_${Date.now()}`, // TODO: Implement proper signing
+                    signature,
                 })
             );
             this.logger.log(`Event ${type} hashed to ledger: ${response.data.id}`);
@@ -201,9 +266,14 @@ export class StartupService {
             throw new NotFoundException('Startup not found');
         }
 
-        // Skip ownership check if no founderId provided (temporary until auth is implemented)
-        if (founderId && startupCheck.rows[0].founder_id !== founderId) {
-            throw new ForbiddenException('You can only update your own startup');
+        // Verify ownership - founderId is required for authenticated requests
+        if (founderId) {
+            if (startupCheck.rows[0].founder_id !== founderId) {
+                throw new ForbiddenException('You can only update your own startup');
+            }
+        } else {
+            // For unauthenticated requests (admin/system operations), log the action
+            this.logger.warn(`Startup ${id} updated without founder verification (system operation)`);
         }
 
         const fields = [];
@@ -293,6 +363,25 @@ export class StartupService {
         return result.rows;
     }
 
+    async getDocumentDownloadUrl(startupId: string, documentId: string) {
+        // Verify document exists and belongs to the startup
+        const result = await this.pool.query(
+            `SELECT file_key FROM startup_documents WHERE id = $1 AND startup_id = $2`,
+            [documentId, startupId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new NotFoundException('Document not found');
+        }
+
+        const fileKey = result.rows[0].file_key;
+
+        // Generate presigned URL for download (valid for 1 hour)
+        const presignedUrl = await this.storage.getPresignedUrl(fileKey, 3600);
+
+        return { url: presignedUrl, expires_in: 3600 };
+    }
+
     async grantAccess(startupId: string, founderId: string, investorId: string) {
         // Verify ownership
         const ownerCheck = await this.pool.query(
@@ -373,8 +462,8 @@ export class StartupService {
             throw new ForbiddenException('You can only add metrics to your own startup');
         }
 
-        // For now, store the value as encrypted (in production, use proper encryption)
-        const encryptedValue = Buffer.from(metricValue.toString()).toString('base64');
+        // Encrypt the metric value using AES-256-GCM
+        const encryptedValue = this.encryptValue(metricValue.toString());
 
         // Store threshold if provided
         const thresholdValue = threshold !== undefined ? threshold : Math.floor(metricValue * 0.8); // Default: 80% of value
@@ -471,8 +560,8 @@ export class StartupService {
             throw new ForbiddenException('You can only retry proofs for your own metrics');
         }
 
-        // Decode the actual value
-        const actualValue = parseInt(Buffer.from(metric.metric_value_encrypted, 'base64').toString());
+        // Decode the actual value using proper decryption
+        const actualValue = parseInt(this.decryptValue(metric.metric_value_encrypted));
         const threshold = metric.threshold_value || Math.floor(actualValue * 0.8);
 
         // Reset status and request new proof

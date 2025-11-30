@@ -233,9 +233,15 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
                                     </div>
                                 </div>
                                 <button
-                                    onClick={() => {
-                                        // In production, this would download from MinIO via presigned URL
-                                        console.log('Download document:', doc.file_key);
+                                    onClick={async () => {
+                                        try {
+                                            const response = await startupsApi.getDocumentDownloadUrl(startupId, doc.id);
+                                            // Open presigned URL in new tab to trigger download
+                                            window.open(response.url, '_blank');
+                                        } catch (error) {
+                                            console.error('Failed to download document:', error);
+                                            alert('Failed to download document. Please try again.');
+                                        }
                                     }}
                                     className="p-2 hover:bg-white/10 rounded-lg transition"
                                     title="Download"

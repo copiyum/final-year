@@ -64,6 +64,13 @@ export class StorageService {
         return JSON.parse(bodyString || '{}');
     }
 
+    /**
+     * Download proof from storage (alias for getProof)
+     */
+    async downloadProof(key: string): Promise<any> {
+        return this.getProof(key);
+    }
+
     async getPresignedUrl(key: string, expiresIn: number = 3600): Promise<string> {
         const command = new GetObjectCommand({
             Bucket: this.bucketName,

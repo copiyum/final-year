@@ -46,24 +46,48 @@ export class CredentialService {
     }
 
     async revokeCredentials(credentialIds: string[]) {
-        // Revocation logic usually involves updating the tree (sparse merkle tree or just recomputing)
-        // For simplicity, we'll assume we are issuing a NEW tree without the revoked credentials.
-        // Or we can use a revocation registry (bitmask).
-        // Let's implement a simple re-issuance for now or just mark as revoked in DB.
-
-        // Design says "Handle credential revocation and root updates".
-        // We'll just log it for now as this is complex state management.
         this.logger.log(`Revoking credentials: ${credentialIds.join(', ')}`);
-        return { status: 'revoked', count: credentialIds.length };
+
+        // 1. Mark credentials as revoked in the database
+        const revokedAt = new Date();
+        await this.pool.query(
+            `UPDATE credential_issuances 
+             SET revoked_at = $1, status = 'revoked'
+             WHERE id = ANY($2)`,
+            [revokedAt, credentialIds]
+        );
+
+        // 2. Get remaining active holders to rebuild the tree
+        const activeResult = await this.pool.query(
+            `SELECT holders FROM credential_issuances 
+             WHERE revoked_at IS NULL AND status != 'revoked'`
+        );
+
+        // 3. If there are active credentials, compute new root
+        let newRoot = null;
+        if (activeResult.rows.length > 0) {
+            const allActiveHolders = activeResult.rows.flatMap(row => 
+                typeof row.holders === 'string' ? JSON.parse(row.holders) : row.holders
+            );
+            
+            if (allActiveHolders.length > 0) {
+                const leaves = allActiveHolders.map((h: string) => canonicalHash({ holder: h }));
+                const tree = new MerkleTreeBuilder(leaves).buildTree();
+                newRoot = tree.root;
+            }
+        }
+
+        return { 
+            status: 'revoked', 
+            count: credentialIds.length,
+            newRoot,
+            revokedAt: revokedAt.toISOString()
+        };
     }
 
-    async verifyMembership(leaf: string, path: any, root: string) {
-        // Use common utility to verify
-        // We need to import verifyMerkleProof from common
-        // But wait, I didn't export it in index.ts? I should check.
-        // It was in merkle.ts but maybe not exported in index.
-        // I'll check index.ts later. For now, I'll assume it's available or implement locally.
-
-        return true; // Placeholder
+    async verifyMembership(leaf: string, path: any, root: string): Promise<boolean> {
+        // Use the verifyMerkleProof utility from common package
+        const { verifyMerkleProof } = await import('@zkp-ledger/common');
+        return verifyMerkleProof(leaf, path, root);
     }
 }

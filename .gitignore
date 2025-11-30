@@ -98,3 +98,5 @@ tsconfig.tsbuildinfo
 *.backup
 .kiro/
 kiro/
+consolidate_code.py
+code

@@ -98,4 +98,115 @@ export class JobsService {
 
         return { requeued, total: jobs.length };
     }
+
+    /**
+     * Get jobs from the dead letter queue
+     */
+    async getDeadLetterJobs(limit: number = 10) {
+        const dlqJobs = await this.queueService.getDeadLetterJobs(limit);
+        return {
+            jobs: dlqJobs,
+            count: dlqJobs.length
+        };
+    }
+
+    /**
+     * Reprocess a specific job from the dead letter queue
+     */
+    async reprocessDeadLetterJob(dlqJobId: string) {
+        const newJobId = await this.queueService.reprocessDeadLetterJob(dlqJobId);
+        
+        if (!newJobId) {
+            throw new Error(`Job ${dlqJobId} not found in dead letter queue`);
+        }
+
+        return {
+            success: true,
+            original_dlq_id: dlqJobId,
+            new_job_id: newJobId,
+            message: 'Job requeued successfully'
+        };
+    }
+
+    /**
+     * Reprocess all jobs in the dead letter queue
+     */
+    async reprocessAllDeadLetterJobs() {
+        const dlqJobs = await this.queueService.getDeadLetterJobs(100);
+        const results = [];
+
+        for (const job of dlqJobs) {
+            try {
+                const newJobId = await this.queueService.reprocessDeadLetterJob(job.id);
+                results.push({ dlq_id: job.id, new_job_id: newJobId, success: true });
+            } catch (error: any) {
+                results.push({ dlq_id: job.id, success: false, error: error.message });
+            }
+        }
+
+        return {
+            processed: results.length,
+            successful: results.filter(r => r.success).length,
+            failed: results.filter(r => !r.success).length,
+            results
+        };
+    }
+
+    /**
+     * Get failed jobs from the database
+     */
+    async getFailedJobs(limit: number = 10) {
+        const result = await this.pool.query(
+            `SELECT * FROM prover_jobs 
+             WHERE status = 'failed' 
+             ORDER BY created_at DESC 
+             LIMIT $1`,
+            [limit]
+        );
+
+        return {
+            jobs: result.rows,
+            count: result.rows.length
+        };
+    }
+
+    /**
+     * Retry a failed job by resetting its status and re-enqueueing
+     */
+    async retryFailedJob(jobId: string) {
+        // Get the failed job
+        const result = await this.pool.query(
+            `SELECT * FROM prover_jobs WHERE id = $1 AND status = 'failed'`,
+            [jobId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new Error(`Failed job ${jobId} not found`);
+        }
+
+        const job = result.rows[0];
+
+        // Reset job status to pending
+        await this.pool.query(
+            `UPDATE prover_jobs 
+             SET status = 'pending', error_message = NULL, retry_count = COALESCE(retry_count, 0) + 1
+             WHERE id = $1`,
+            [jobId]
+        );
+
+        // Re-enqueue the job
+        await this.queueService.addJob({
+            id: job.id,
+            circuit_type: job.circuit,
+            batch_id: job.target_id,
+            input: job.witness_data,
+            batch_root: job.witness_data?.batchRoot,
+        });
+
+        return {
+            success: true,
+            job_id: jobId,
+            message: 'Job requeued successfully'
+        };
+    }
 }

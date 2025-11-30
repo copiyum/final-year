@@ -7,12 +7,15 @@ export class BlocksService {
     constructor(@Inject('DATABASE_POOL') private pool: Pool) { }
 
     async createBlock() {
-        // 1. Fetch unbatched/unblocked events (simplified: just take last 10 for demo)
-        // In production, we would track which events are already in blocks.
-        // For now, let's assume we just create a block from recent events.
-
-        // TODO: Implement proper event selection logic (e.g. status='pending_block')
-        const eventsResult = await this.pool.query('SELECT id, type, payload, signer FROM events ORDER BY created_at DESC LIMIT 10');
+        // 1. Fetch unbatched/unblocked events with proper status filtering
+        // Select events that haven't been included in a block yet (block_id is NULL or status='pending_block')
+        const eventsResult = await this.pool.query(
+            `SELECT id, type, payload, signer FROM events 
+             WHERE block_id IS NULL 
+             AND (block_status IS NULL OR block_status = 'pending_block')
+             ORDER BY created_at ASC 
+             LIMIT 10`
+        );
         const events = eventsResult.rows;
 
         if (events.length === 0) {
@@ -25,17 +28,20 @@ export class BlocksService {
         const index = latestBlock ? parseInt(latestBlock.index) + 1 : 1;
 
         // 3. Compute Merkle Root
-        // We use event IDs as leaves for simplicity, or hash(canonical(event))
-        // Let's use event IDs for now as per design doc example
-        const leaves = events.map(e => e.id); // UUIDs are strings
-        // We need to hash the leaves first if they are not already hashes? 
-        // Design doc says "Merkle root of all events". Usually we hash the event data.
-        // Let's assume we use the event ID as the leaf for the tree structure.
-        // But for security, we should hash the canonical event.
-        // For this implementation, let's just hash the ID to be safe or use ID directly if it's 32 bytes? UUID is not 32 bytes hex.
-        // Let's hash the ID to get 32-byte hex.
+        // Hash the canonical representation of each event for security
         const crypto = require('crypto');
-        const hashedLeaves = leaves.map(id => crypto.createHash('sha256').update(id).digest('hex'));
+        const hashedLeaves = events.map(e => {
+            // Create canonical hash of the event data for proper Merkle tree construction
+            const eventData = {
+                id: e.id,
+                type: e.type,
+                payload: e.payload,
+                signer: e.signer,
+                format_version: '1.0'
+            };
+            return canonicalHash(eventData);
+        });
+        const leaves = events.map(e => e.id);
 
         const treeBuilder = new MerkleTreeBuilder(hashedLeaves);
         const tree = treeBuilder.buildTree();
@@ -73,7 +79,16 @@ export class BlocksService {
         ];
 
         const result = await this.pool.query(query, values);
-        return result.rows[0];
+        const block = result.rows[0];
+
+        // 7. Update events with block reference
+        const eventIds = events.map(e => e.id);
+        await this.pool.query(
+            `UPDATE events SET block_id = $1, block_status = 'included' WHERE id = ANY($2)`,
+            [block.id, eventIds]
+        );
+
+        return block;
     }
 
     async getLatestBlock() {
@@ -86,55 +101,82 @@ export class BlocksService {
         return result.rows[0];
     }
 
+    /**
+     * Verify blockchain integrity using streaming/pagination to avoid OOM
+     * Processes blocks in batches to handle large chains efficiently
+     */
     async verifyChain() {
-        const result = await this.pool.query('SELECT * FROM blocks ORDER BY index ASC');
-        const blocks = result.rows;
+        const crypto = require('crypto');
         const errors: string[] = [];
+        const batchSize = 100; // Process 100 blocks at a time
+        let offset = 0;
+        let totalCount = 0;
+        let prevBlock: any = null;
 
-        if (blocks.length === 0) {
+        // Get total count first
+        const countResult = await this.pool.query('SELECT COUNT(*) as count FROM blocks');
+        const totalBlocks = parseInt(countResult.rows[0].count);
+
+        if (totalBlocks === 0) {
             return { valid: true, count: 0, errors };
         }
 
-        // Verify Genesis
-        const genesis = blocks[0];
-        if (genesis.index !== '1') {
-            errors.push(`Genesis block has invalid index: ${genesis.index}`);
-        }
-        if (genesis.prev_hash !== '0000000000000000000000000000000000000000000000000000000000000000') {
-            errors.push(`Genesis block has invalid prev_hash: ${genesis.prev_hash}`);
-        }
+        // Process blocks in batches using cursor-based pagination
+        while (offset < totalBlocks) {
+            const result = await this.pool.query(
+                'SELECT index, prev_hash, hash, canonical_payload FROM blocks ORDER BY index ASC LIMIT $1 OFFSET $2',
+                [batchSize, offset]
+            );
+            const blocks = result.rows;
 
-        // Verify Chain
-        for (let i = 0; i < blocks.length; i++) {
-            const block = blocks[i];
+            if (blocks.length === 0) break;
 
-            // 1. Verify Hash
-            // Reconstruct canonical object
-            // Note: We need to handle the fact that we don't have the original event list in the block table
-            // For now, we will verify that the stored hash matches the re-hashed canonical_payload
+            for (let i = 0; i < blocks.length; i++) {
+                const block = blocks[i];
+                const globalIndex = offset + i;
 
-            const crypto = require('crypto');
-            const recomputedHash = crypto.createHash('sha256').update(block.canonical_payload).digest('hex');
+                // Verify Genesis block
+                if (globalIndex === 0) {
+                    if (block.index !== '1') {
+                        errors.push(`Genesis block has invalid index: ${block.index}`);
+                    }
+                    if (block.prev_hash !== '0000000000000000000000000000000000000000000000000000000000000000') {
+                        errors.push(`Genesis block has invalid prev_hash: ${block.prev_hash}`);
+                    }
+                }
 
-            if (recomputedHash !== block.hash) {
-                errors.push(`Block ${block.index} hash mismatch. Stored: ${block.hash}, Computed: ${recomputedHash}`);
+                // 1. Verify Hash
+                const recomputedHash = crypto.createHash('sha256').update(block.canonical_payload).digest('hex');
+                if (recomputedHash !== block.hash) {
+                    errors.push(`Block ${block.index} hash mismatch. Stored: ${block.hash}, Computed: ${recomputedHash}`);
+                }
+
+                // 2. Verify Chain Link
+                if (prevBlock) {
+                    if (block.prev_hash !== prevBlock.hash) {
+                        errors.push(`Block ${block.index} prev_hash mismatch. Expected: ${prevBlock.hash}, Actual: ${block.prev_hash}`);
+                    }
+                    if (parseInt(block.index) !== parseInt(prevBlock.index) + 1) {
+                        errors.push(`Block ${block.index} index discontinuity. Prev: ${prevBlock.index}`);
+                    }
+                }
+
+                prevBlock = block;
+                totalCount++;
+
+                // Early exit if too many errors (prevent log spam)
+                if (errors.length >= 100) {
+                    errors.push(`... truncated after 100 errors`);
+                    return { valid: false, count: totalCount, errors };
+                }
             }
 
-            // 2. Verify Chain Link
-            if (i > 0) {
-                const prevBlock = blocks[i - 1];
-                if (block.prev_hash !== prevBlock.hash) {
-                    errors.push(`Block ${block.index} prev_hash mismatch. Expected: ${prevBlock.hash}, Actual: ${block.prev_hash}`);
-                }
-                if (parseInt(block.index) !== parseInt(prevBlock.index) + 1) {
-                    errors.push(`Block ${block.index} index discontinuity. Prev: ${prevBlock.index}`);
-                }
-            }
+            offset += batchSize;
         }
 
         return {
             valid: errors.length === 0,
-            count: blocks.length,
+            count: totalCount,
             errors,
         };
     }
