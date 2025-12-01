@@ -5,6 +5,38 @@ import { InvestorService } from './investor.service';
 export class InvestorController {
     constructor(private readonly investorService: InvestorService) { }
 
+    // ==================== METRIC VERIFICATION REQUESTS ====================
+
+    @Get('startups/:startupId/available-metrics')
+    async getStartupAvailableMetrics(@Param('startupId') startupId: string) {
+        return this.investorService.getStartupAvailableMetrics(startupId);
+    }
+
+    @Post('verify-metric')
+    async requestMetricVerification(
+        @Body('investorId') investorId: string,
+        @Body('startupId') startupId: string,
+        @Body('metricType') metricType: string,
+        @Body('threshold') threshold: number,
+    ) {
+        return this.investorService.requestMetricVerification(investorId, startupId, metricType, threshold);
+    }
+
+    @Get('verification-requests')
+    async getMyVerificationRequests(@Query('investorId') investorId: string) {
+        return this.investorService.getMyVerificationRequests(investorId);
+    }
+
+    @Get('verification-requests/:id')
+    async getVerificationRequestDetails(
+        @Param('id') id: string,
+        @Query('investorId') investorId: string,
+    ) {
+        return this.investorService.getVerificationRequestDetails(id, investorId);
+    }
+
+    // ==================== EXISTING ENDPOINTS ====================
+
     @Post('interests')
     async expressInterest(
         @Body('investorId') investorId: string,

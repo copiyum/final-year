@@ -108,4 +108,33 @@ export class StartupController {
     ) {
         return this.startupService.retryMetricProof(metricId, founderId);
     }
+
+    // ==================== INVESTOR VERIFICATION REQUESTS ====================
+
+    @Get(':id/verification-requests')
+    async getVerificationRequests(
+        @Param('id') id: string,
+        @Query('founderId') founderId: string,
+    ) {
+        return this.startupService.getVerificationRequests(id, founderId);
+    }
+
+    @Post(':id/verification-requests/:requestId/approve')
+    async approveVerificationRequest(
+        @Param('id') id: string,
+        @Param('requestId') requestId: string,
+        @Body('founderId') founderId: string,
+    ) {
+        return this.startupService.approveVerificationRequest(id, requestId, founderId);
+    }
+
+    @Post(':id/verification-requests/:requestId/reject')
+    async rejectVerificationRequest(
+        @Param('id') id: string,
+        @Param('requestId') requestId: string,
+        @Body('founderId') founderId: string,
+        @Body('reason') reason?: string,
+    ) {
+        return this.startupService.rejectVerificationRequest(id, requestId, founderId, reason);
+    }
 }

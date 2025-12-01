@@ -11,12 +11,14 @@ export class JobsService {
     ) { }
 
     async createJob(dto: CreateJobDto) {
-        // 1. Validate target exists
-        const table = dto.target_type === 'event' ? 'events' : 'batches';
-        const target = await this.pool.query(`SELECT id FROM ${table} WHERE id = $1`, [dto.target_id]);
+        // 1. Validate target exists (skip validation for verification_request type)
+        if (dto.target_type !== 'verification_request') {
+            const table = dto.target_type === 'event' ? 'events' : 'batches';
+            const target = await this.pool.query(`SELECT id FROM ${table} WHERE id = $1`, [dto.target_id]);
 
-        if (target.rows.length === 0) {
-            throw new Error(`Target ${dto.target_type} with ID ${dto.target_id} not found`);
+            if (target.rows.length === 0) {
+                throw new Error(`Target ${dto.target_type} with ID ${dto.target_id} not found`);
+            }
         }
 
         // 2. Check for duplicate job
@@ -57,6 +59,8 @@ export class JobsService {
             id: job.id,
             circuit_type: dto.circuit,
             batch_id: job.target_id,
+            target_type: dto.target_type,
+            target_id: dto.target_id,
             input: dto.witness_data,
             batch_root: dto.witness_data?.batchRoot,
         });

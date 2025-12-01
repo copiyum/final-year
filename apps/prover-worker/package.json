@@ -27,6 +27,7 @@
     "@zkp-ledger/common": "workspace:*",
     "@zkp-ledger/queue": "workspace:*",
     "@zkp-ledger/storage": "workspace:*",
+    "dotenv": "^16.4.5",
     "ioredis": "^5.8.2",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",

@@ -363,3 +363,99 @@ export const proofsApi = {
         return response.data;
     },
 };
+
+// ==================== METRIC VERIFICATION REQUESTS ====================
+
+export interface MetricVerificationRequest {
+    id: string;
+    investor_id: string;
+    startup_id: string;
+    metric_type: string;
+    threshold: number;
+    status: 'pending' | 'approved' | 'rejected' | 'verified' | 'failed';
+    proof_result?: boolean;
+    proof_batch_id?: string;
+    rejection_reason?: string;
+    startup_name?: string;
+    investor_email?: string;
+    created_at: string;
+    responded_at?: string;
+    verified_at?: string;
+}
+
+export interface StartupAvailableMetrics {
+    startup_id: string;
+    startup_name: string;
+    metrics: Array<{
+        id: string;
+        name: string;
+        has_verified_proof: boolean;
+    }>;
+}
+
+export const verificationApi = {
+    // Get available metrics for a startup (what investors can verify)
+    getAvailableMetrics: async (startupId: string): Promise<StartupAvailableMetrics> => {
+        const response = await investorApi.get(`/investor/startups/${startupId}/available-metrics`);
+        return response.data;
+    },
+
+    // Investor: Request metric verification
+    requestVerification: async (startupId: string, metricType: string, threshold: number): Promise<MetricVerificationRequest> => {
+        const userData = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+        if (!userData) throw new Error('User not authenticated');
+        const user = JSON.parse(userData);
+        const response = await investorApi.post('/investor/verify-metric', {
+            investorId: user.id,
+            startupId,
+            metricType,
+            threshold
+        });
+        return response.data;
+    },
+
+    // Investor: Get my verification requests
+    getMyRequests: async (): Promise<MetricVerificationRequest[]> => {
+        const userData = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+        if (!userData) return [];
+        const user = JSON.parse(userData);
+        const response = await investorApi.get('/investor/verification-requests', {
+            params: { investorId: user.id }
+        });
+        return response.data;
+    },
+
+    // Founder: Get verification requests for my startup
+    getStartupRequests: async (startupId: string): Promise<MetricVerificationRequest[]> => {
+        const userData = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+        if (!userData) return [];
+        const user = JSON.parse(userData);
+        const response = await startupApi.get(`/startups/${startupId}/verification-requests`, {
+            params: { founderId: user.id }
+        });
+        return response.data;
+    },
+
+    // Founder: Approve verification request
+    approveRequest: async (startupId: string, requestId: string): Promise<any> => {
+        const userData = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+        if (!userData) throw new Error('User not authenticated');
+        const user = JSON.parse(userData);
+        const response = await startupApi.post(`/startups/${startupId}/verification-requests/${requestId}/approve`, {
+            founderId: user.id
+        });
+        return response.data;
+    },
+
+    // Founder: Reject verification request
+    rejectRequest: async (startupId: string, requestId: string, reason?: string): Promise<any> => {
+        const userData = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+        if (!userData) throw new Error('User not authenticated');
+        const user = JSON.parse(userData);
+        const response = await startupApi.post(`/startups/${startupId}/verification-requests/${requestId}/reject`, {
+            founderId: user.id,
+            reason
+        });
+        return response.data;
+    },
+};

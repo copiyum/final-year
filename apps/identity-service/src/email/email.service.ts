@@ -29,13 +29,19 @@ export class EmailService {
     }
 
     async sendEmail(options: EmailOptions): Promise<boolean> {
-        if (!this.enabled) {
-            if (this.isProduction) {
-                this.logger.error(`[PRODUCTION] Email NOT sent to ${options.to}: ${options.subject} - RESEND_API_KEY not configured`);
-                return false; // Return false in production to indicate email was not sent
-            }
-            this.logger.log(`[Dev Mode] Email to ${options.to}: ${options.subject}`);
+        // In development, just log the email content
+        if (!this.isProduction) {
+            this.logger.log(`\n${'='.repeat(80)}`);
+            this.logger.log(`📧 [DEV MODE] Email to: ${options.to}`);
+            this.logger.log(`Subject: ${options.subject}`);
+            this.logger.log(`Content:\n${options.html}`);
+            this.logger.log(`${'='.repeat(80)}\n`);
             return true;
+        }
+
+        if (!this.enabled) {
+            this.logger.error(`[PRODUCTION] Email NOT sent to ${options.to}: ${options.subject} - RESEND_API_KEY not configured`);
+            return false;
         }
 
         try {

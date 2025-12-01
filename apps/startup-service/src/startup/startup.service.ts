@@ -19,6 +19,9 @@ interface UpdateStartupDTO {
     sector?: string;
     teamSize?: number;
     fundingAsk?: number;
+    // Allow snake_case from API requests
+    team_size?: number;
+    funding_ask?: number;
 }
 
 @Injectable()
@@ -111,7 +114,7 @@ export class StartupService implements OnModuleInit {
                     type,
                     payload,
                     signer,
-                    signature,
+                    signature: `${signature}:${timestamp}`,
                 })
             );
             this.logger.log(`Event ${type} hashed to ledger: ${response.data.id}`);
@@ -172,12 +175,16 @@ export class StartupService implements OnModuleInit {
         }
     }
 
-    async create(founderId: string, dto: CreateStartupDTO) {
+    async create(founderId: string, dto: any) {
+        // Handle both camelCase and snake_case
+        const teamSize = dto.teamSize || dto.team_size;
+        const fundingAsk = dto.fundingAsk || dto.funding_ask;
+        
         const result = await this.pool.query(
             `INSERT INTO startups (founder_id, name, description, sector, team_size, funding_ask)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, founder_id, name, description, sector, team_size, funding_ask, created_at, updated_at`,
-            [founderId, dto.name, dto.description, dto.sector, dto.teamSize, dto.fundingAsk]
+            [founderId, dto.name, dto.description, dto.sector, teamSize, fundingAsk]
         );
 
         const startup = result.rows[0];
@@ -292,13 +299,16 @@ export class StartupService implements OnModuleInit {
             fields.push(`sector = $${paramCount++}`);
             values.push(dto.sector);
         }
-        if (dto.teamSize !== undefined) {
+        // Handle both camelCase and snake_case
+        const teamSize = dto.teamSize !== undefined ? dto.teamSize : dto.team_size;
+        if (teamSize !== undefined) {
             fields.push(`team_size = $${paramCount++}`);
-            values.push(dto.teamSize);
+            values.push(teamSize);
         }
-        if (dto.fundingAsk !== undefined) {
+        const fundingAsk = dto.fundingAsk !== undefined ? dto.fundingAsk : dto.funding_ask;
+        if (fundingAsk !== undefined) {
             fields.push(`funding_ask = $${paramCount++}`);
-            values.push(dto.fundingAsk);
+            values.push(fundingAsk);
         }
 
         if (fields.length === 0) {
@@ -631,5 +641,214 @@ export class StartupService implements OnModuleInit {
         );
 
         return result.rows;
+    }
+
+    // ==================== INVESTOR VERIFICATION REQUESTS ====================
+
+    /**
+     * Get all pending verification requests for this startup
+     */
+    async getVerificationRequests(startupId: string, founderId: string) {
+        // Verify ownership
+        const ownerCheck = await this.pool.query(
+            `SELECT id FROM startups WHERE id = $1 AND founder_id = $2`,
+            [startupId, founderId]
+        );
+
+        if (ownerCheck.rows.length === 0) {
+            throw new ForbiddenException('You can only view verification requests for your own startup');
+        }
+
+        const result = await this.pool.query(
+            `SELECT mvr.*, u.email as investor_email
+             FROM metric_verification_requests mvr
+             LEFT JOIN users u ON mvr.investor_id = u.id
+             WHERE mvr.startup_id = $1
+             ORDER BY 
+                CASE mvr.status WHEN 'pending' THEN 0 ELSE 1 END,
+                mvr.created_at DESC`,
+            [startupId]
+        );
+
+        return result.rows;
+    }
+
+    /**
+     * Approve a verification request and trigger ZKP generation
+     */
+    async approveVerificationRequest(startupId: string, requestId: string, founderId: string) {
+        // Verify ownership
+        const ownerCheck = await this.pool.query(
+            `SELECT id FROM startups WHERE id = $1 AND founder_id = $2`,
+            [startupId, founderId]
+        );
+
+        if (ownerCheck.rows.length === 0) {
+            throw new ForbiddenException('You can only approve requests for your own startup');
+        }
+
+        // Get the request
+        const requestResult = await this.pool.query(
+            `SELECT * FROM metric_verification_requests WHERE id = $1 AND startup_id = $2`,
+            [requestId, startupId]
+        );
+
+        if (requestResult.rows.length === 0) {
+            throw new NotFoundException('Verification request not found');
+        }
+
+        const request = requestResult.rows[0];
+        if (request.status !== 'pending') {
+            throw new ForbiddenException(`Request already ${request.status}`);
+        }
+
+        // Find the matching metric for this startup
+        // Try exact match first (case-insensitive), then partial match
+        let metricResult = await this.pool.query(
+            `SELECT * FROM startup_metrics 
+             WHERE startup_id = $1 AND LOWER(metric_name) = LOWER($2)
+             ORDER BY created_at DESC LIMIT 1`,
+            [startupId, request.metric_type]
+        );
+
+        // If no exact match, try partial match (metric name contains the requested type)
+        if (metricResult.rows.length === 0) {
+            metricResult = await this.pool.query(
+                `SELECT * FROM startup_metrics 
+                 WHERE startup_id = $1 AND LOWER(metric_name) LIKE $2
+                 ORDER BY created_at DESC LIMIT 1`,
+                [startupId, `%${request.metric_type.toLowerCase()}%`]
+            );
+        }
+
+        // If still no match, try reverse (requested type contains metric name words)
+        if (metricResult.rows.length === 0) {
+            metricResult = await this.pool.query(
+                `SELECT * FROM startup_metrics 
+                 WHERE startup_id = $1 AND LOWER($2) LIKE '%' || LOWER(SPLIT_PART(metric_name, ' ', 1)) || '%'
+                 ORDER BY created_at DESC LIMIT 1`,
+                [startupId, request.metric_type]
+            );
+        }
+
+        if (metricResult.rows.length === 0) {
+            // No metric found - reject automatically
+            await this.pool.query(
+                `UPDATE metric_verification_requests 
+                 SET status = 'rejected', rejection_reason = 'No matching metric data available', responded_at = NOW()
+                 WHERE id = $1`,
+                [requestId]
+            );
+            throw new NotFoundException(`No ${request.metric_type} metric found. Add the metric first.`);
+        }
+
+        const metric = metricResult.rows[0];
+        const actualValue = parseInt(this.decryptValue(metric.metric_value_encrypted));
+        const investorThreshold = parseFloat(request.threshold);
+
+        // Update request status to approved
+        await this.pool.query(
+            `UPDATE metric_verification_requests SET status = 'approved', responded_at = NOW() WHERE id = $1`,
+            [requestId]
+        );
+
+        // Create a batch for this proof
+        const batchResult = await this.pool.query(
+            `INSERT INTO batches (id, event_ids, prestate_root, poststate_root, status)
+             VALUES (gen_random_uuid(), $1, '0x0', '0x0', 'pending')
+             RETURNING id`,
+            [JSON.stringify([requestId])]
+        );
+        const batchId = batchResult.rows[0].id;
+
+        // Request ZKP proof with investor's threshold
+        try {
+            const response = await firstValueFrom(
+                this.httpService.post(`${this.proverCoordinatorUrl}/jobs`, {
+                    target_type: 'verification_request',
+                    target_id: requestId,
+                    circuit: 'metrics_threshold',
+                    witness_data: {
+                        actualValue,
+                        threshold: investorThreshold,
+                        metricType: this.getMetricTypeCode(request.metric_type),
+                        batchRoot: batchId,
+                    },
+                    priority: 10,
+                })
+            );
+
+            this.logger.log(`Proof job created: ${response.data.id} for verification request ${requestId}`);
+
+            // Update request with batch reference
+            await this.pool.query(
+                `UPDATE metric_verification_requests SET proof_batch_id = $1 WHERE id = $2`,
+                [batchId, requestId]
+            );
+
+            // Hash event to ledger
+            await this.hashEventToLedger(
+                'metric.verification.approved',
+                { request_id: requestId, startup_id: startupId, metric_type: request.metric_type },
+                founderId
+            );
+
+            return {
+                message: 'Verification request approved, ZKP proof generation started',
+                request_id: requestId,
+                batch_id: batchId,
+                job_id: response.data.id
+            };
+        } catch (error: any) {
+            this.logger.error(`Failed to request proof: ${error.message}`);
+            throw error;
+        }
+    }
+
+    /**
+     * Reject a verification request
+     */
+    async rejectVerificationRequest(startupId: string, requestId: string, founderId: string, reason?: string) {
+        // Verify ownership
+        const ownerCheck = await this.pool.query(
+            `SELECT id FROM startups WHERE id = $1 AND founder_id = $2`,
+            [startupId, founderId]
+        );
+
+        if (ownerCheck.rows.length === 0) {
+            throw new ForbiddenException('You can only reject requests for your own startup');
+        }
+
+        // Get the request
+        const requestResult = await this.pool.query(
+            `SELECT * FROM metric_verification_requests WHERE id = $1 AND startup_id = $2`,
+            [requestId, startupId]
+        );
+
+        if (requestResult.rows.length === 0) {
+            throw new NotFoundException('Verification request not found');
+        }
+
+        const request = requestResult.rows[0];
+        if (request.status !== 'pending') {
+            throw new ForbiddenException(`Request already ${request.status}`);
+        }
+
+        // Update request status
+        await this.pool.query(
+            `UPDATE metric_verification_requests 
+             SET status = 'rejected', rejection_reason = $1, responded_at = NOW()
+             WHERE id = $2`,
+            [reason || 'Request declined by founder', requestId]
+        );
+
+        // Hash event to ledger
+        await this.hashEventToLedger(
+            'metric.verification.rejected',
+            { request_id: requestId, startup_id: startupId },
+            founderId
+        );
+
+        return { message: 'Verification request rejected', request_id: requestId };
     }
 }

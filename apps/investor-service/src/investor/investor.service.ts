@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, Inject, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Inject, Logger } from '@nestjs/common';
 import { Pool } from 'pg';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
@@ -18,15 +18,154 @@ export class InvestorService {
         this.proverCoordinatorUrl = process.env.PROVER_COORDINATOR_URL || 'http://localhost:3001';
     }
 
+    // ==================== METRIC VERIFICATION REQUESTS ====================
+
+    /**
+     * Get available metrics for a startup (for investors to see what they can verify)
+     */
+    async getStartupAvailableMetrics(startupId: string) {
+        // Validate startup exists
+        const startupCheck = await this.pool.query(
+            'SELECT id, name FROM startups WHERE id = $1',
+            [startupId]
+        );
+        if (startupCheck.rows.length === 0) {
+            throw new NotFoundException('Startup not found');
+        }
+
+        // Get all metrics for this startup (only names and thresholds, not actual values)
+        const metricsResult = await this.pool.query(
+            `SELECT id, metric_name, threshold_value, proof_status, created_at
+             FROM startup_metrics 
+             WHERE startup_id = $1
+             ORDER BY created_at DESC`,
+            [startupId]
+        );
+
+        return {
+            startup_id: startupId,
+            startup_name: startupCheck.rows[0].name,
+            metrics: metricsResult.rows.map(m => ({
+                id: m.id,
+                name: m.metric_name,
+                has_verified_proof: m.proof_status === 'verified',
+            }))
+        };
+    }
+
+    /**
+     * Investor requests verification that a startup's metric exceeds a threshold
+     */
+    async requestMetricVerification(
+        investorId: string,
+        startupId: string,
+        metricType: string,
+        threshold: number
+    ) {
+        // Validate startup exists
+        const startupCheck = await this.pool.query(
+            'SELECT id, name FROM startups WHERE id = $1',
+            [startupId]
+        );
+        if (startupCheck.rows.length === 0) {
+            throw new NotFoundException('Startup not found');
+        }
+
+        // Normalize the metric type (keep original case for custom metrics)
+        const normalizedType = metricType.trim();
+
+        // Check for duplicate pending request (case-insensitive)
+        const existingRequest = await this.pool.query(
+            `SELECT id FROM metric_verification_requests 
+             WHERE investor_id = $1 AND startup_id = $2 AND LOWER(metric_type) = LOWER($3) AND status = 'pending'`,
+            [investorId, startupId, normalizedType]
+        );
+        if (existingRequest.rows.length > 0) {
+            throw new ConflictException('You already have a pending verification request for this metric');
+        }
+
+        // Create the verification request
+        const result = await this.pool.query(
+            `INSERT INTO metric_verification_requests (investor_id, startup_id, metric_type, threshold, status)
+             VALUES ($1, $2, $3, $4, 'pending')
+             RETURNING *`,
+            [investorId, startupId, normalizedType, threshold]
+        );
+
+        const request = result.rows[0];
+
+        // Notify founder
+        this.notifyFounder(startupId, 'metric.verification.requested', {
+            investor_id: investorId,
+            startup_id: startupId,
+            request_id: request.id,
+            metric_type: normalizedType,
+            threshold,
+            message: `An investor wants to verify your ${normalizedType} exceeds ${threshold.toLocaleString()}`
+        });
+
+        // Hash event to ledger
+        this.hashEventToLedger(
+            'metric.verification.requested',
+            { request_id: request.id, investor_id: investorId, startup_id: startupId, metric_type: normalizedType },
+            investorId
+        );
+
+        return {
+            id: request.id,
+            startup_name: startupCheck.rows[0].name,
+            metric_type: normalizedType,
+            threshold,
+            status: 'pending',
+            message: 'Verification request sent to startup founder for approval'
+        };
+    }
+
+    /**
+     * Get all verification requests made by this investor
+     */
+    async getMyVerificationRequests(investorId: string) {
+        const result = await this.pool.query(
+            `SELECT mvr.*, s.name as startup_name, s.sector
+             FROM metric_verification_requests mvr
+             JOIN startups s ON mvr.startup_id = s.id
+             WHERE mvr.investor_id = $1
+             ORDER BY mvr.created_at DESC`,
+            [investorId]
+        );
+        return result.rows;
+    }
+
+    /**
+     * Get details of a specific verification request
+     */
+    async getVerificationRequestDetails(requestId: string, investorId: string) {
+        const result = await this.pool.query(
+            `SELECT mvr.*, s.name as startup_name, s.sector
+             FROM metric_verification_requests mvr
+             JOIN startups s ON mvr.startup_id = s.id
+             WHERE mvr.id = $1 AND mvr.investor_id = $2`,
+            [requestId, investorId]
+        );
+
+        if (result.rows.length === 0) {
+            throw new NotFoundException('Verification request not found');
+        }
+
+        return result.rows[0];
+    }
+
+    // ==================== EXISTING METHODS ====================
+
     /**
      * Generate a cryptographic signature for an event
      */
-    private generateSignature(type: string, payload: any, signer: string): string {
+    private generateSignature(type: string, payload: any, signer: string, timestamp: number): string {
         const signingKey = process.env.SIGNING_SECRET;
         if (!signingKey) {
             throw new Error('SIGNING_SECRET environment variable is required');
         }
-        const message = JSON.stringify({ type, payload, signer, timestamp: Date.now() });
+        const message = JSON.stringify({ type, payload, signer, timestamp });
         return crypto.createHmac('sha256', signingKey).update(message).digest('hex');
     }
 
@@ -35,13 +174,14 @@ export class InvestorService {
      */
     private async hashEventToLedger(type: string, payload: any, signer: string): Promise<string | null> {
         try {
-            const signature = this.generateSignature(type, payload, signer);
+            const timestamp = Date.now();
+            const signature = this.generateSignature(type, payload, signer, timestamp);
             const response = await firstValueFrom(
                 this.httpService.post(`${this.ledgerServiceUrl}/events`, {
                     type,
                     payload,
                     signer,
-                    signature,
+                    signature: `${signature}:${timestamp}`,
                 })
             );
             this.logger.log(`Event ${type} hashed to ledger: ${response.data.id}`);

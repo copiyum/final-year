@@ -16,7 +16,8 @@
     "@types/pg": "^8.11.10"
   },
   "scripts": {
-    "migrate": "node migrate.js"
+    "migrate": "node migrate.js",
+    "migrate:fresh": "node migrate-fresh.js"
   },
   "peerDependencies": {
     "typescript": "^5"

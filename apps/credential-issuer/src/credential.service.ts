@@ -244,7 +244,7 @@ export class CredentialService {
                     type: eventType,
                     payload,
                     signer,
-                    signature,
+                    signature: `${signature}:${timestamp}`,
                 })
             );
 

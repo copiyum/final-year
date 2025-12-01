@@ -44,30 +44,14 @@ pkill -f "rollup-aggregator" 2>/dev/null || true
 sleep 2
 
 echo ""
-echo "🗑️  Clearing database..."
-# Reset PostgreSQL database - use CASCADE to handle foreign keys
-docker exec final-postgres-1 psql -U postgres -d zkp_ledger -c "
--- Disable triggers temporarily
-SET session_replication_role = 'replica';
+echo "🗑️  Dropping and recreating database..."
+# Drop and recreate database
+docker exec final-postgres-1 psql -U postgres -c "DROP DATABASE IF EXISTS zkp_ledger;" 2>/dev/null
+docker exec final-postgres-1 psql -U postgres -c "CREATE DATABASE zkp_ledger;" 2>/dev/null && echo "   ✅ Database recreated"
 
--- Truncate all tables with CASCADE
-TRUNCATE TABLE startup_metrics CASCADE;
-TRUNCATE TABLE startup_documents CASCADE;
-TRUNCATE TABLE access_permissions CASCADE;
-TRUNCATE TABLE commitments CASCADE;
-TRUNCATE TABLE interests CASCADE;
-TRUNCATE TABLE startups CASCADE;
-TRUNCATE TABLE user_credentials CASCADE;
-TRUNCATE TABLE users CASCADE;
-TRUNCATE TABLE prover_jobs CASCADE;
-TRUNCATE TABLE batches CASCADE;
-TRUNCATE TABLE events CASCADE;
-TRUNCATE TABLE blocks CASCADE;
-TRUNCATE TABLE credentials CASCADE;
-
--- Re-enable triggers
-SET session_replication_role = 'origin';
-" 2>/dev/null && echo "   ✅ Database cleared" || echo "   Database reset skipped (tables may not exist)"
+echo ""
+echo "🔧 Running database migrations..."
+cd packages/database && npm run migrate:fresh && cd ../.. && echo "   ✅ Migrations completed"
 
 echo ""
 echo "🗑️  Clearing Redis..."

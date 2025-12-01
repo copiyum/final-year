@@ -11,15 +11,15 @@ export default function InterestsSection() {
     if (isLoading) {
         return (
             <div className="text-center py-8">
-                <Loader2 className="w-8 h-8 text-purple-400 animate-spin mx-auto mb-2" />
-                <p className="text-gray-400 text-sm">Loading interests...</p>
+                <Loader2 className="w-8 h-8 text-white animate-spin mx-auto mb-2" />
+                <p className="text-zinc-500 text-sm">Loading interests...</p>
             </div>
         );
     }
 
     if (interests.length === 0) {
         return (
-            <div className="text-gray-400 text-center py-8">
+            <div className="text-zinc-500 text-center py-8 text-sm">
                 No interests expressed yet.
             </div>
         );
@@ -28,17 +28,17 @@ export default function InterestsSection() {
     return (
         <div className="space-y-3">
             {interests.map((interest: any) => (
-                <div key={interest.id} className="p-4 bg-white/5 rounded-xl border border-white/10 flex items-center justify-between">
+                <div key={interest.id} className="p-4 bg-black/50 rounded-xl border border-zinc-800 flex items-center justify-between hover:border-zinc-700 transition-colors">
                     <div className="flex items-center gap-3">
-                        <Star className="w-5 h-5 text-yellow-400" />
+                        <Star className="w-5 h-5 text-white" />
                         <div>
-                            <h4 className="text-white font-medium">{interest.startup_name || 'Unknown Startup'}</h4>
-                            <p className="text-gray-400 text-xs">
+                            <h4 className="text-white font-medium text-sm">{interest.startup_name || 'Unknown Startup'}</h4>
+                            <p className="text-zinc-500 text-xs">
                                 Expressed on {new Date(interest.created_at).toLocaleDateString()}
                             </p>
                         </div>
                     </div>
-                    <button className="p-2 hover:bg-white/10 rounded-lg transition text-gray-400 hover:text-white">
+                    <button className="p-2 hover:bg-zinc-800 rounded-lg transition-colors text-zinc-400 hover:text-white">
                         <ExternalLink className="w-4 h-4" />
                     </button>
                 </div>

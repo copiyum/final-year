@@ -34,10 +34,29 @@ if ! lsof -i :8545 > /dev/null 2>&1; then
     echo "📜 Deploying smart contracts to fresh Anvil..."
     cd contracts
     PRIVATE_KEY=0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast > ../logs/contract-deploy.log 2>&1
+    
+    # Parse deployed addresses from logs
+    GROTH16_VERIFIER_ADDRESS=$(grep "GROTH16_VERIFIER_ADDRESS=" ../logs/contract-deploy.log | tail -1 | cut -d'=' -f2)
+    BATCH_VERIFIER_ADDRESS=$(grep "BATCH_VERIFIER_ADDRESS=" ../logs/contract-deploy.log | tail -1 | cut -d'=' -f2)
+    
+    # Update .env file with deployed addresses
+    if [ -f ../.env ]; then
+        # Remove old addresses if they exist
+        sed -i.bak '/^GROTH16_VERIFIER_ADDRESS=/d' ../.env
+        sed -i.bak '/^BATCH_VERIFIER_ADDRESS=/d' ../.env
+        rm -f ../.env.bak
+    fi
+    echo "GROTH16_VERIFIER_ADDRESS=$GROTH16_VERIFIER_ADDRESS" >> ../.env
+    echo "BATCH_VERIFIER_ADDRESS=$BATCH_VERIFIER_ADDRESS" >> ../.env
+    
+    # Export for current session
+    export GROTH16_VERIFIER_ADDRESS
+    export BATCH_VERIFIER_ADDRESS
+    
     cd - > /dev/null
     echo "   ✅ Contracts deployed:"
-    echo "      Groth16Verifier: 0x5FbDB2315678afecb367f032d93F642f64180aa3"
-    echo "      BatchVerifier:   0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+    echo "      Groth16Verifier: $GROTH16_VERIFIER_ADDRESS"
+    echo "      BatchVerifier:   $BATCH_VERIFIER_ADDRESS"
 else
     echo "   Anvil already running on port 8545"
 fi
@@ -123,7 +142,8 @@ echo "   - Metrics:           http://localhost:3000/metrics"
 echo ""
 echo "⛓️  Blockchain:"
 echo "   - Anvil RPC:         http://localhost:8545"
-echo "   - BatchVerifier:     ${BATCH_VERIFIER_ADDRESS:-Check logs/contract-deploy.log}"
+echo "   - Groth16Verifier:   ${GROTH16_VERIFIER_ADDRESS}"
+echo "   - BatchVerifier:     ${BATCH_VERIFIER_ADDRESS}"
 echo ""
 echo "📝 Logs are in ./logs/"
 echo ""

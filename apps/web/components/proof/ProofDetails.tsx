@@ -17,16 +17,16 @@ export default function ProofDetails({ batch }: ProofDetailsProps) {
     };
 
     return (
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+        <div className="bg-zinc-900/50 backdrop-blur-lg rounded-2xl p-6 border border-zinc-800 shadow-sm">
             <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-white">Proof Details</h2>
+                <h2 className="text-xl font-bold text-white tracking-tight">Proof Details</h2>
                 <button
                     onClick={handleCopy}
-                    className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition text-sm text-gray-300"
+                    className="flex items-center gap-2 px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors text-sm text-zinc-300"
                 >
                     {copied ? (
                         <>
-                            <Check className="w-4 h-4 text-green-400" />
+                            <Check className="w-4 h-4 text-white" />
                             Copied
                         </>
                     ) : (
@@ -41,9 +41,9 @@ export default function ProofDetails({ batch }: ProofDetailsProps) {
             <div className="space-y-6">
                 {/* Proof JSON */}
                 <div>
-                    <span className="text-gray-400 text-sm block mb-2 font-mono">Proof Data (Groth16)</span>
-                    <div className="bg-black/50 rounded-xl p-4 overflow-x-auto">
-                        <pre className="text-green-400 font-mono text-xs">
+                    <span className="text-zinc-500 text-sm block mb-2 font-mono uppercase tracking-wider">Proof Data (Groth16)</span>
+                    <div className="bg-black rounded-xl p-4 overflow-x-auto border border-zinc-800">
+                        <pre className="text-zinc-300 font-mono text-xs">
                             {proofData}
                         </pre>
                     </div>
@@ -51,9 +51,9 @@ export default function ProofDetails({ batch }: ProofDetailsProps) {
 
                 {/* Public Signals */}
                 <div>
-                    <span className="text-gray-400 text-sm block mb-2 font-mono">Public Signals</span>
-                    <div className="bg-black/50 rounded-xl p-4 overflow-x-auto">
-                        <pre className="text-blue-400 font-mono text-xs">
+                    <span className="text-zinc-500 text-sm block mb-2 font-mono uppercase tracking-wider">Public Signals</span>
+                    <div className="bg-black rounded-xl p-4 overflow-x-auto border border-zinc-800">
+                        <pre className="text-white font-mono text-xs">
                             {batch.proof?.public_inputs
                                 ? JSON.stringify(batch.proof.public_inputs, null, 2)
                                 : batch.public_signals
@@ -65,9 +65,9 @@ export default function ProofDetails({ batch }: ProofDetailsProps) {
 
                 {/* Verification Key Hash */}
                 <div>
-                    <span className="text-gray-400 text-sm block mb-2 font-mono">Verification Key Hash</span>
-                    <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-                        <code className="text-gray-300 font-mono text-sm break-all">
+                    <span className="text-zinc-500 text-sm block mb-2 font-mono uppercase tracking-wider">Verification Key Hash</span>
+                    <div className="bg-black/50 rounded-lg p-3 border border-zinc-800">
+                        <code className="text-zinc-300 font-mono text-sm break-all">
                             {batch.vk_hash || 'Not available'}
                         </code>
                     </div>

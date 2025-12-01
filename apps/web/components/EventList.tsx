@@ -12,10 +12,10 @@ export default function EventList() {
 
     if (isLoading) {
         return (
-            <div className="bg-white shadow-md rounded-lg p-6">
+            <div className="bg-zinc-900/50 backdrop-blur-lg border border-zinc-800 shadow-sm rounded-2xl p-6">
                 <div className="animate-pulse space-y-4">
-                    <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                    <div className="h-4 bg-gray-200 rounded w-1/2"></div>
+                    <div className="h-4 bg-zinc-800 rounded w-3/4"></div>
+                    <div className="h-4 bg-zinc-800 rounded w-1/2"></div>
                 </div>
             </div>
         );
@@ -23,42 +23,42 @@ export default function EventList() {
 
     if (error) {
         return (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+            <div className="bg-red-500/10 border border-red-500/20 text-red-400 px-4 py-3 rounded-lg">
                 Error loading events: {error.message}
             </div>
         );
     }
 
     return (
-        <div className="bg-white shadow-md rounded-lg overflow-hidden">
-            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-                <h2 className="text-xl font-bold text-gray-900">Events</h2>
+        <div className="bg-zinc-900/50 backdrop-blur-lg border border-zinc-800 shadow-sm rounded-2xl overflow-hidden">
+            <div className="px-6 py-4 bg-black/20 border-b border-zinc-800">
+                <h2 className="text-xl font-bold text-white tracking-tight">Events</h2>
             </div>
-            <div className="divide-y divide-gray-200">
+            <div className="divide-y divide-zinc-800">
                 {events && events.length > 0 ? (
                     events.map((event) => (
                         <Link
                             key={event.id}
                             href={`/events/${event.id}`}
-                            className="block hover:bg-gray-50 transition-colors"
+                            className="block hover:bg-zinc-800/50 transition-colors"
                         >
                             <div className="px-6 py-4">
                                 <div className="flex items-center justify-between">
                                     <div className="flex-1">
-                                        <p className="text-sm font-medium text-gray-900">
+                                        <p className="text-sm font-medium text-white">
                                             {event.type}
                                         </p>
-                                        <p className="text-sm text-gray-500 font-mono">
+                                        <p className="text-sm text-zinc-500 font-mono">
                                             {event.id.substring(0, 16)}...
                                         </p>
                                     </div>
                                     <div className="ml-4">
                                         <span
-                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${event.proof_status === 'verified'
-                                                    ? 'bg-green-100 text-green-800'
-                                                    : event.proof_status === 'pending'
-                                                        ? 'bg-yellow-100 text-yellow-800'
-                                                        : 'bg-gray-100 text-gray-800'
+                                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${event.proof_status === 'verified'
+                                                ? 'bg-white text-black border-white'
+                                                : event.proof_status === 'pending'
+                                                    ? 'bg-zinc-800 text-zinc-400 border-zinc-700'
+                                                    : 'bg-zinc-900 text-zinc-500 border-zinc-800'
                                                 }`}
                                         >
                                             {event.proof_status}
@@ -69,7 +69,7 @@ export default function EventList() {
                         </Link>
                     ))
                 ) : (
-                    <div className="px-6 py-8 text-center text-gray-500">
+                    <div className="px-6 py-8 text-center text-zinc-500">
                         No events found
                     </div>
                 )}

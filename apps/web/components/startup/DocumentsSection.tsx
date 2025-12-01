@@ -117,13 +117,13 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
     };
 
     return (
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+        <div className="bg-zinc-900/50 backdrop-blur-lg rounded-2xl p-6 border border-zinc-800 shadow-sm">
             <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-white">Documents</h2>
+                <h2 className="text-xl font-bold text-white tracking-tight">Documents</h2>
                 <button
                     onClick={handleUploadClick}
                     disabled={uploadDocumentMutation.isPending}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 disabled:cursor-not-allowed text-white rounded-lg transition"
+                    className="flex items-center gap-2 px-4 py-2 bg-white hover:bg-zinc-200 disabled:bg-zinc-600 text-black rounded-lg transition-colors text-sm font-medium"
                 >
                     {uploadDocumentMutation.isPending ? (
                         <>
@@ -148,14 +148,14 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
 
             {/* Upload Progress */}
             {uploadProgress !== null && (
-                <div className="mb-4 p-4 bg-white/5 rounded-xl border border-white/10">
+                <div className="mb-4 p-4 bg-black/50 rounded-xl border border-zinc-800">
                     <div className="flex items-center justify-between mb-2">
-                        <span className="text-white text-sm">Uploading...</span>
-                        <span className="text-purple-400 text-sm font-medium">{uploadProgress}%</span>
+                        <span className="text-white text-xs">Uploading...</span>
+                        <span className="text-white text-xs font-medium">{uploadProgress}%</span>
                     </div>
-                    <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
+                    <div className="w-full h-1 bg-zinc-800 rounded-full overflow-hidden">
                         <div
-                            className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-300"
+                            className="h-full bg-white transition-all duration-300"
                             style={{ width: `${uploadProgress}%` }}
                         />
                     </div>
@@ -171,20 +171,20 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
                 className={`
                     mb-6 p-8 border-2 border-dashed rounded-xl cursor-pointer transition-all
                     ${isDragging
-                        ? 'border-purple-500 bg-purple-500/10'
-                        : 'border-white/20 hover:border-purple-500/50 hover:bg-white/5'
+                        ? 'border-white bg-zinc-900'
+                        : 'border-zinc-800 hover:border-zinc-600 hover:bg-zinc-900/50'
                     }
                 `}
             >
                 <div className="flex flex-col items-center justify-center text-center">
-                    <Upload className={`w-12 h-12 mb-3 ${isDragging ? 'text-purple-400' : 'text-gray-400'}`} />
-                    <p className="text-white font-medium mb-1">
+                    <Upload className={`w-10 h-10 mb-3 ${isDragging ? 'text-white' : 'text-zinc-600'}`} />
+                    <p className="text-white font-medium mb-1 text-sm">
                         {isDragging ? 'Drop file here' : 'Drag and drop file here'}
                     </p>
-                    <p className="text-gray-400 text-sm">
+                    <p className="text-zinc-500 text-xs">
                         or click to browse
                     </p>
-                    <p className="text-gray-500 text-xs mt-2">
+                    <p className="text-zinc-600 text-[10px] mt-2 uppercase tracking-wider">
                         Supported: PDF, DOC, DOCX, XLS, XLSX, CSV
                     </p>
                 </div>
@@ -193,11 +193,11 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
             {/* Documents List */}
             {documentsLoading ? (
                 <div className="text-center py-8">
-                    <Loader2 className="w-8 h-8 text-purple-400 animate-spin mx-auto mb-2" />
-                    <p className="text-gray-400 text-sm">Loading documents...</p>
+                    <Loader2 className="w-8 h-8 text-white animate-spin mx-auto mb-2" />
+                    <p className="text-zinc-500 text-sm">Loading documents...</p>
                 </div>
             ) : documents.length === 0 ? (
-                <div className="text-gray-400 text-center py-8">
+                <div className="text-zinc-500 text-center py-8 text-sm">
                     No documents uploaded yet
                 </div>
             ) : (
@@ -205,29 +205,29 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
                     {documents.map((doc) => (
                         <div
                             key={doc.id}
-                            className="p-4 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 transition"
+                            className="p-4 bg-black/50 rounded-xl border border-zinc-800 hover:border-zinc-700 transition-colors"
                         >
                             <div className="flex items-start justify-between">
                                 <div className="flex items-start gap-3 flex-1">
-                                    <FileText className="w-5 h-5 text-purple-400 mt-0.5" />
+                                    <FileText className="w-5 h-5 text-white mt-0.5" />
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-1">
-                                            <h4 className="text-white font-medium truncate">
+                                            <h4 className="text-white font-medium truncate text-sm">
                                                 {getDocumentTypeLabel(doc.document_type)}
                                             </h4>
                                             {!doc.upload_event_id ? (
-                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-yellow-500/20 border border-yellow-500/50 rounded-full">
-                                                    <Clock className="w-3 h-3 text-yellow-400" />
-                                                    <span className="text-yellow-400 text-xs font-medium">Pending ZK Batch</span>
+                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-zinc-800 border border-zinc-700 rounded-full">
+                                                    <Clock className="w-3 h-3 text-zinc-400" />
+                                                    <span className="text-zinc-400 text-[10px] font-medium">Pending ZK Batch</span>
                                                 </div>
                                             ) : (
-                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-green-500/20 border border-green-500/50 rounded-full">
-                                                    <CheckCircle className="w-3 h-3 text-green-400" />
-                                                    <span className="text-green-400 text-xs font-medium">Batched</span>
+                                                <div className="flex items-center gap-1 px-2 py-0.5 bg-white text-black border border-white rounded-full">
+                                                    <CheckCircle className="w-3 h-3" />
+                                                    <span className="text-[10px] font-bold">Batched</span>
                                                 </div>
                                             )}
                                         </div>
-                                        <p className="text-gray-400 text-sm">
+                                        <p className="text-zinc-500 text-xs">
                                             {formatFileSize(doc.file_size)} • Uploaded {new Date(doc.created_at).toLocaleDateString()}
                                         </p>
                                     </div>
@@ -243,10 +243,10 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
                                             alert('Failed to download document. Please try again.');
                                         }
                                     }}
-                                    className="p-2 hover:bg-white/10 rounded-lg transition"
+                                    className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
                                     title="Download"
                                 >
-                                    <Download className="w-4 h-4 text-gray-400 hover:text-white" />
+                                    <Download className="w-4 h-4 text-zinc-400 hover:text-white" />
                                 </button>
                             </div>
                         </div>
@@ -255,8 +255,8 @@ export default function DocumentsSection({ startupId }: DocumentsSectionProps) {
             )}
 
             {uploadDocumentMutation.isError && (
-                <div className="mt-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg">
-                    <p className="text-red-400 text-sm">
+                <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                    <p className="text-red-400 text-xs">
                         Failed to upload document. Please try again.
                     </p>
                 </div>

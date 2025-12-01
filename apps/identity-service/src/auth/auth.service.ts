@@ -37,20 +37,21 @@ export class AuthService {
         this.credentialIssuerUrl = process.env.CREDENTIAL_ISSUER_URL || 'http://localhost:3006';
     }
 
-    private generateSignature(type: string, payload: any, signer: string): string {
+    private generateSignature(type: string, payload: any, signer: string, timestamp: number): string {
         const signingKey = process.env.SIGNING_SECRET;
         if (!signingKey) {
             throw new Error('SIGNING_SECRET environment variable is required');
         }
-        const message = JSON.stringify({ type, payload, signer, timestamp: Date.now() });
+        const message = JSON.stringify({ type, payload, signer, timestamp });
         return crypto.createHmac('sha256', signingKey).update(message).digest('hex');
     }
 
     private async hashEventToLedger(type: string, payload: any, signer: string): Promise<string | null> {
         try {
-            const signature = this.generateSignature(type, payload, signer);
+            const timestamp = Date.now();
+            const signature = this.generateSignature(type, payload, signer, timestamp);
             const response = await firstValueFrom(
-                this.httpService.post(`${this.ledgerServiceUrl}/events`, { type, payload, signer, signature })
+                this.httpService.post(`${this.ledgerServiceUrl}/events`, { type, payload, signer, signature: `${signature}:${timestamp}` })
             );
             this.logger.log(`Event ${type} hashed to ledger: ${response.data.id}`);
             return response.data.id;

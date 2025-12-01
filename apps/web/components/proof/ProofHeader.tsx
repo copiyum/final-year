@@ -9,18 +9,18 @@ export default function ProofHeader({ batch }: ProofHeaderProps) {
     const isFailed = batch.status === 'failed' || batch.proof?.status === 'failed';
 
     return (
-        <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20 mb-6">
+        <div className="bg-zinc-900/50 backdrop-blur-lg rounded-2xl p-6 border border-zinc-800 shadow-sm mb-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-purple-500/20 flex items-center justify-center">
-                        <Shield className="w-6 h-6 text-purple-400" />
+                    <div className="w-12 h-12 rounded-xl bg-zinc-800 flex items-center justify-center border border-zinc-700">
+                        <Shield className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold text-white mb-1">ZK Proof Batch</h1>
-                        <div className="flex items-center gap-2 text-gray-400 text-sm font-mono">
+                        <h1 className="text-2xl font-bold text-white mb-1 tracking-tight">ZK Proof Batch</h1>
+                        <div className="flex items-center gap-2 text-zinc-400 text-sm font-mono">
                             <span>ID: {batch.id?.substring(0, 8)}...{batch.id?.substring(batch.id.length - 6)}</span>
                             <button
-                                className="hover:text-white transition"
+                                className="hover:text-white transition-colors"
                                 onClick={() => navigator.clipboard.writeText(batch.id)}
                             >
                                 <FileText className="w-3 h-3" />
@@ -30,11 +30,11 @@ export default function ProofHeader({ batch }: ProofHeaderProps) {
                 </div>
 
                 <div className="flex items-center gap-4">
-                    <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border ${isVerified
-                            ? 'bg-green-500/20 border-green-500/50 text-green-400'
-                            : isFailed
-                                ? 'bg-red-500/20 border-red-500/50 text-red-400'
-                                : 'bg-yellow-500/20 border-yellow-500/50 text-yellow-400'
+                    <div className={`flex items-center gap-2 px-4 py-2 rounded-lg border font-medium ${isVerified
+                        ? 'bg-white text-black border-white'
+                        : isFailed
+                            ? 'bg-red-500/10 border-red-500/20 text-red-400'
+                            : 'bg-zinc-800 text-zinc-400 border-zinc-700'
                         }`}>
                         {isVerified ? (
                             <>
@@ -56,19 +56,19 @@ export default function ProofHeader({ batch }: ProofHeaderProps) {
                 </div>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-white/10">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-zinc-800">
                 <div>
-                    <span className="text-gray-400 text-xs block mb-1">Created At</span>
+                    <span className="text-zinc-500 text-xs block mb-1 uppercase tracking-wider">Created At</span>
                     <span className="text-white font-medium">
                         {batch.created_at ? new Date(batch.created_at).toLocaleString() : 'Unknown'}
                     </span>
                 </div>
                 <div>
-                    <span className="text-gray-400 text-xs block mb-1">Total Events</span>
+                    <span className="text-zinc-500 text-xs block mb-1 uppercase tracking-wider">Total Events</span>
                     <span className="text-white font-medium">{batch.event_count || batch.events?.length || 0}</span>
                 </div>
                 <div className="col-span-2">
-                    <span className="text-gray-400 text-xs block mb-1">Root Hash</span>
+                    <span className="text-zinc-500 text-xs block mb-1 uppercase tracking-wider">Root Hash</span>
                     <span className="text-white font-mono text-xs break-all">
                         {batch.batch_root || batch.root_hash || batch.root || 'Pending...'}
                     </span>
@@ -77,22 +77,22 @@ export default function ProofHeader({ batch }: ProofHeaderProps) {
 
             {/* Blockchain Anchor Info */}
             {batch.anchor_tx && (
-                <div className="mt-6 pt-6 border-t border-white/10">
-                    <h3 className="text-white font-semibold mb-3">On-Chain Verification</h3>
+                <div className="mt-6 pt-6 border-t border-zinc-800">
+                    <h3 className="text-white font-semibold mb-3 tracking-tight">On-Chain Verification</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <span className="text-gray-400 text-xs block mb-1">Transaction Hash</span>
+                            <span className="text-zinc-500 text-xs block mb-1 uppercase tracking-wider">Transaction Hash</span>
                             <a
                                 href={`https://amoy.polygonscan.com/tx/${batch.anchor_tx.txHash}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-purple-400 hover:text-purple-300 font-mono text-xs break-all"
+                                className="text-white hover:text-zinc-300 font-mono text-xs break-all underline underline-offset-2 transition-colors"
                             >
                                 {batch.anchor_tx.txHash}
                             </a>
                         </div>
                         <div>
-                            <span className="text-gray-400 text-xs block mb-1">Block Number</span>
+                            <span className="text-zinc-500 text-xs block mb-1 uppercase tracking-wider">Block Number</span>
                             <span className="text-white font-medium">{batch.anchor_tx.blockNumber}</span>
                         </div>
                     </div>
@@ -100,7 +100,7 @@ export default function ProofHeader({ batch }: ProofHeaderProps) {
                         href={`https://amoy.polygonscan.com/tx/${batch.anchor_tx.txHash}`}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/50 text-purple-400 rounded-lg transition text-sm"
+                        className="inline-flex items-center gap-2 mt-4 px-4 py-2 bg-zinc-900 hover:bg-zinc-800 border border-zinc-700 hover:border-zinc-600 text-white rounded-lg transition-colors text-sm"
                     >
                         View on Polygonscan →
                     </a>

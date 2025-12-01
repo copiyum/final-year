@@ -132,7 +132,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
             this.logger.log(`Job ${job.id} marked as verified`);
 
             // Update related tables based on circuit type
-            await this.updateRelatedTables(job, proofUrl);
+            await this.updateRelatedTables(job, proofUrl, publicSignals);
 
             return { proof, publicSignals, proofUrl };
         } catch (error: any) {
@@ -206,14 +206,15 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
             return this.generateSimulatedProof(job, 'metrics_threshold');
         }
 
-        // Prepare input
+        // Prepare input - ensure metricType defaults to 1 if not provided
+        const metricType = job.input.metricType || 1;
         const input = {
             actualValue: job.input.actualValue.toString(),
             threshold: job.input.threshold.toString(),
-            metricType: job.input.metricType.toString()
+            metricType: metricType.toString()
         };
 
-        this.logger.log(`Generating ZKP proof for: actualValue > ${job.input.threshold}`);
+        this.logger.log(`Generating ZKP proof for: actualValue=${job.input.actualValue} > threshold=${job.input.threshold}, metricType=${metricType}`);
 
         // Generate proof using Groth16 with cached files
         const { proof, publicSignals } = await snarkjs.groth16.fullProve(
@@ -242,6 +243,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
     private async generateRollupProof(job: any): Promise<{ proof: any; publicSignals: any }> {
         const snarkjs = await import('snarkjs');
         const path = await import('path');
+        const crypto = await import('crypto');
 
         const circuitPath = process.env.CIRCUIT_PATH || path.join(process.cwd(), 'circuits');
         const wasmPath = path.join(circuitPath, 'rollup_circuit.wasm');
@@ -256,14 +258,37 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
             return this.generateSimulatedProof(job, 'rollup-circuit');
         }
 
-        // Prepare input for rollup circuit
-        const input = {
-            prestateRoot: job.input.prestateRoot || '0',
-            poststateRoot: job.input.batchRoot || job.batch_root || '0',
-            eventCount: (job.input.eventIds?.length || 0).toString()
+        // Convert hex string to BigInt for circuit input
+        const hexToBigInt = (hex: string): string => {
+            if (!hex || hex === '0' || hex === '0x0') return '0';
+            const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+            return BigInt('0x' + cleanHex.slice(0, 32)).toString(); // Take first 32 hex chars (128 bits)
         };
 
-        this.logger.log(`Generating rollup proof for batch with ${input.eventCount} events`);
+        // Generate event hashes from event IDs (or use provided hashes)
+        const eventIds = job.input?.eventIds || [];
+        const MAX_BATCH_SIZE = 32;
+        const eventHashes: string[] = [];
+        
+        for (let i = 0; i < MAX_BATCH_SIZE; i++) {
+            if (i < eventIds.length) {
+                // Hash the event ID to get a numeric value for the circuit
+                const hash = crypto.createHash('sha256').update(eventIds[i]).digest('hex');
+                eventHashes.push(hexToBigInt(hash));
+            } else {
+                eventHashes.push('0'); // Pad with zeros
+            }
+        }
+
+        // Prepare input for rollup circuit
+        const input = {
+            prestateRoot: hexToBigInt(job.input?.prestateRoot || '0'),
+            poststateRoot: hexToBigInt(job.input?.batchRoot || job.batch_root || '0'),
+            batchSize: eventIds.length.toString(),
+            eventHashes: eventHashes
+        };
+
+        this.logger.log(`Generating rollup proof for batch with ${eventIds.length} events`);
 
         const { proof, publicSignals } = await snarkjs.groth16.fullProve(
             input,
@@ -280,7 +305,7 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
             }
         }
 
-        this.logger.log('✅ rollup-circuit proof generated successfully!');
+        this.logger.log('✅ rollup-circuit proof generated and verified successfully!');
         return { proof, publicSignals };
     }
 
@@ -401,11 +426,25 @@ export class WorkerService implements OnModuleInit, OnModuleDestroy {
     /**
      * Update related database tables after proof generation
      */
-    private async updateRelatedTables(job: any, proofUrl: string): Promise<void> {
+    private async updateRelatedTables(job: any, proofUrl: string, publicSignals: any[]): Promise<void> {
         try {
             switch (job.circuit_type) {
                 case 'metrics_threshold':
-                    if (job.batch_id) {
+                    // Check if this is for a verification request (investor-driven)
+                    if (job.target_type === 'verification_request' && job.target_id) {
+                        // Get the public signals to determine if proof passed
+                        // publicSignals[0] = isValid (1 if actualValue > threshold, 0 otherwise)
+                        const proofResult = publicSignals?.[0] === '1' || publicSignals?.[0] === 1;
+                        
+                        await this.pool.query(
+                            `UPDATE metric_verification_requests 
+                             SET status = 'verified', proof_result = $1, proof_url = $2, verified_at = NOW()
+                             WHERE id = $3`,
+                            [proofResult, proofUrl, job.target_id]
+                        );
+                        this.logger.log(`Updated verification request ${job.target_id}: proof_result=${proofResult}`);
+                    } else if (job.batch_id) {
+                        // Original startup-initiated metric proof
                         await this.pool.query(
                             `UPDATE startup_metrics 
                              SET proof_status = 'verified', proof_url = $1 
