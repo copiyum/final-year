@@ -7,7 +7,7 @@ import * as crypto from 'crypto';
 @Injectable()
 export class EventsService {
     private readonly logger = new Logger(EventsService.name);
-    private readonly signatureValidityWindowMs = 5 * 60 * 1000; // 5 minutes
+    private readonly signatureValidityWindowMs = 5 * 60 * 1000;
 
     constructor(@Inject('DATABASE_POOL') private pool: Pool) { }
 
@@ -22,45 +22,45 @@ export class EventsService {
             this.logger.error('SIGNING_SECRET environment variable is required for signature validation');
             return false;
         }
-        
+
         // Check for new format: signature:timestamp
         if (signature.includes(':')) {
             const [sig, timestampStr] = signature.split(':');
             if (!/^[a-f0-9]{64}$/i.test(sig)) return false;
-            
+
             const timestamp = parseInt(timestampStr, 10);
             if (isNaN(timestamp)) return false;
-            
+
             const now = Date.now();
             // Reject if timestamp is outside validity window
             if (timestamp < now - this.signatureValidityWindowMs || timestamp > now + 60000) {
                 return false;
             }
-            
+
             const message = JSON.stringify({ type, payload, signer, timestamp });
             const expectedSignature = crypto.createHmac('sha256', signingKey).update(message).digest('hex');
-            
+
             try {
                 return crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSignature, 'hex'));
             } catch {
                 return false;
             }
         }
-        
+
         // Legacy format: plain signature - check discrete time buckets (30-second intervals)
         if (!signature || !/^[a-f0-9]{64}$/i.test(signature)) {
             return false;
         }
-        
+
         const now = Date.now();
         const bucketSize = 30000; // 30-second buckets instead of 1-second (reduces from 300 to 10 checks)
         const windowStart = now - this.signatureValidityWindowMs;
-        
+
         // Check signatures at bucket boundaries within the validity window
         for (let timestamp = Math.floor(windowStart / bucketSize) * bucketSize; timestamp <= now; timestamp += bucketSize) {
             const message = JSON.stringify({ type, payload, signer, timestamp });
             const expectedSignature = crypto.createHmac('sha256', signingKey).update(message).digest('hex');
-            
+
             try {
                 if (crypto.timingSafeEqual(Buffer.from(signature, 'hex'), Buffer.from(expectedSignature, 'hex'))) {
                     return true;
@@ -69,7 +69,7 @@ export class EventsService {
                 continue;
             }
         }
-        
+
         return false;
     }
 
@@ -126,7 +126,7 @@ export class EventsService {
             Object.entries(filter).forEach(([key, value]) => {
                 // Sanitize key to prevent SQL injection
                 const sanitizedKey = key.replace(/[^a-zA-Z0-9_]/g, '');
-                
+
                 if (allowedTopLevelFields.includes(sanitizedKey)) {
                     values.push(value);
                     conditions.push(`${sanitizedKey} = $${values.length}`);
@@ -180,7 +180,7 @@ export class EventsService {
         );
 
         const eventsMap = new Map(eventsResult.rows.map(e => [e.id, e]));
-        
+
         // Build ordered list of leaf hashes
         const eventHashes: string[] = [];
         for (const eid of eventIds) {
@@ -188,7 +188,7 @@ export class EventsService {
             if (!event) {
                 throw new Error(`Data integrity error: Event ${eid} not found in batch`);
             }
-            
+
             // Use stored leaf_hash if available, otherwise compute
             if (event.leaf_hash) {
                 eventHashes.push(event.leaf_hash);
